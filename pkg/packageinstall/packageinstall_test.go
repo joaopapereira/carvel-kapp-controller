@@ -46,28 +46,33 @@ func Test_PackageRefWithPrerelease_IsFound(t *testing.T) {
 	// Load package into fake client
 	fakePkgClient := fakeapiserver.NewSimpleClientset(&expectedPackageVersion)
 
-	// PackageInstall that has PackageRef with prerelease
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-prerelease",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: "pkg.test.carvel.dev",
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "3.0.0-rc.1",
-						Prereleases: &versions.VersionSelectionSemverPrereleases{
-							Identifiers: []string{"rc"},
-						},
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-prerelease",
+		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: "pkg.test.carvel.dev",
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "3.0.0-rc.1",
+					Prereleases: &versions.VersionSelectionSemverPrereleases{
+						Identifiers: []string{"rc"},
 					},
 				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
 			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
 		},
+	}
+
+	componentInfo := FakeComponentInfo{K8sVersion: semver.MustParse("0.20.0")}
+	fakekctrl := fakekappctrl.NewSimpleClientset(model)
+	// PackageInstall that has PackageRef with prerelease
+	ip := PackageInstallCR{
+		model:     model,
 		pkgclient: fakePkgClient,
 		log:       log,
-		compInfo:  FakeComponentInfo{K8sVersion: semver.MustParse("0.20.0")},
+		compInfo:  componentInfo,
+		pdh:       NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekctrl),
 	}
 
 	out, err := ip.referencedPkgVersion()
@@ -75,7 +80,7 @@ func Test_PackageRefWithPrerelease_IsFound(t *testing.T) {
 		t.Fatalf("\nExpected no error from getting PackageRef with prerelease\nBut got:\n%v\n", err)
 	}
 
-	if !reflect.DeepEqual(out, expectedPackageVersion) {
+	if !reflect.DeepEqual(*out, expectedPackageVersion) {
 		t.Fatalf("\nPackageVersion is not same:\nExpected:\n%#v\nGot:\n%#v\n", expectedPackageVersion, out)
 	}
 }
@@ -88,28 +93,31 @@ func Test_PackageWithConstraints(t *testing.T) {
 
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
-	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "0.0.0", ">1.0.0 <2.0.0", ">0.15.0")
-	fakePkgClient := fakeapiserver.NewSimpleClientset(&pkg)
+	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []datapkgingv1alpha1.Dependency{}, ">1.0.0 <2.0.0", ">0.15.0")
+	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg)
 
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-ignore-kc-constraint",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: "pkg.test.carvel.dev",
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "0.0.0",
-					},
-				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
-			},
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-ignore-kc-constraint",
 		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: "pkg.test.carvel.dev",
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "0.0.0",
+				},
+			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
+		},
+	}
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0"), K8sVersion: semver.MustParse("0.20.0")}
+	ip := PackageInstallCR{
+		model:      model,
 		pkgclient:  fakePkgClient,
 		log:        log,
 		coreClient: fakek8s,
-		compInfo:   FakeComponentInfo{KCVersion: semver.MustParse("1.5.0"), K8sVersion: semver.MustParse("0.20.0")},
+		compInfo:   componentInfo,
+		pdh:        NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	// all constraints met
@@ -118,6 +126,7 @@ func Test_PackageWithConstraints(t *testing.T) {
 
 	// kapp-controller version constraint fail
 	ip.compInfo = FakeComponentInfo{KCVersion: semver.MustParse("3.0.0"), K8sVersion: semver.MustParse("0.20.0")}
+	ip.pdh.finder.compInfo = ip.compInfo
 	_, err = ip.referencedPkgVersion()
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "after-kubernetes-version-check=1")
@@ -132,6 +141,7 @@ func Test_PackageWithConstraints(t *testing.T) {
 
 	// kubernetes version constraint fail
 	ip.compInfo = FakeComponentInfo{KCVersion: semver.MustParse("1.5.0"), K8sVersion: semver.MustParse("0.0.0")}
+	ip.pdh.finder.compInfo = ip.compInfo
 	_, err = ip.referencedPkgVersion()
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "after-kubernetes-version-check=0")
@@ -151,24 +161,27 @@ func Test_Package_NotFound(t *testing.T) {
 	fakePkgClient := fakeapiserver.NewSimpleClientset()
 	pkgName := "pkg.test.carvel.dev"
 
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-no-pkg-found",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: pkgName,
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "0.0.0",
-					},
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-no-pkg-found",
+		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: pkgName,
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "0.0.0",
 				},
 			},
 		},
+	}
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("0.42.0")}
+	ip := PackageInstallCR{
+		model:      model,
 		pkgclient:  fakePkgClient,
-		compInfo:   FakeComponentInfo{KCVersion: semver.MustParse("0.42.0")},
+		compInfo:   componentInfo,
 		log:        log,
 		coreClient: fakek8s,
+		pdh:        NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	_, err := ip.referencedPkgVersion()
@@ -179,28 +192,31 @@ func Test_Package_NotFound(t *testing.T) {
 func Test_Package_ConstraintNotGiven_ErrorDoesNotContainMessage(t *testing.T) {
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
-	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "0.0.0", "1.0.0", "")
-	fakePkgClient := fakeapiserver.NewSimpleClientset(&pkg)
+	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []datapkgingv1alpha1.Dependency{}, "1.0.0", "")
+	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg)
 
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-ignore-kc-constraint",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: "pkg.test.carvel.dev",
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "0.0.0",
-					},
-				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
-			},
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")}
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-ignore-kc-constraint",
 		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: "pkg.test.carvel.dev",
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "0.0.0",
+				},
+			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
+		},
+	}
+	ip := PackageInstallCR{
+		model:      model,
 		pkgclient:  fakePkgClient,
-		compInfo:   FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")},
+		compInfo:   componentInfo,
 		log:        log,
 		coreClient: fakek8s,
+		pdh:        NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	_, err := ip.referencedPkgVersion()
@@ -213,30 +229,34 @@ func Test_PackageWithConstraints_HighestMatch(t *testing.T) {
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
 	pkgName := "pkg.test.carvel.dev"
-	pkg1 := generatePackageWithConstraints(pkgName, "0.4.0", ">0.1.0", ">0.1.0") // this one is the lowest version but installable
-	pkg2 := generatePackageWithConstraints(pkgName, "0.5.0", ">0.1.0", ">0.1.0") // this one is the highest installable version
-	pkg3 := generatePackageWithConstraints(pkgName, "1.4.1", ">2.0.0", "")       // higher version uninstallable
-	fakePkgClient := fakeapiserver.NewSimpleClientset(&pkg1, &pkg2, &pkg3)
+	pkg1 := generatePackageWithConstraints(pkgName, "test-ns", "0.4.0", []datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the lowest version but installable
+	pkg2 := generatePackageWithConstraints(pkgName, "test-ns", "0.5.0", []datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the highest installable version
+	pkg3 := generatePackageWithConstraints(pkgName, "test-ns", "1.4.1", []datapkgingv1alpha1.Dependency{}, ">2.0.0", "")       // higher version uninstallable
+	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg1, pkg2, pkg3)
 
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-multi-version-constraints",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: pkgName,
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: ">0.0.0",
-					},
-				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
-			},
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-multi-version-constraints",
 		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: pkgName,
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: ">0.0.0",
+				},
+			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
+		},
+	}
+
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0"), K8sVersion: semver.MustParse("0.20.0")}
+	ip := PackageInstallCR{
+		model:      model,
 		pkgclient:  fakePkgClient,
-		compInfo:   FakeComponentInfo{KCVersion: semver.MustParse("1.5.0"), K8sVersion: semver.MustParse("0.20.0")},
+		compInfo:   componentInfo,
 		log:        log,
 		coreClient: fakek8s,
+		pdh:        NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	out, err := ip.referencedPkgVersion()
@@ -265,29 +285,32 @@ func Test_PackageRefWithPrerelease_DoesNotRequirePrereleaseMarker(t *testing.T) 
 		GitVersion: "v0.20.0",
 	}
 
-	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg-prerelease",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: "pkg.test.carvel.dev",
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "3.0.0-rc.1",
-					},
-				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
-			},
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg-prerelease",
 		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: "pkg.test.carvel.dev",
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "3.0.0-rc.1",
+				},
+			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
+		},
+	}
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")}
+	ip := PackageInstallCR{
+		model:     model,
 		pkgclient: fakePkgClient,
-		compInfo:  FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")},
+		compInfo:  componentInfo,
 		log:       log,
+		pdh:       NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	out, err := ip.referencedPkgVersion()
 	require.NoError(t, err)
-	require.Equal(t, out, expectedPackageVersion)
+	require.Equal(t, *out, expectedPackageVersion)
 }
 
 func Test_PackageRefUsesName(t *testing.T) {
@@ -323,24 +346,27 @@ func Test_PackageRefUsesName(t *testing.T) {
 		GitVersion: "v0.20.0",
 	}
 
+	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")}
+	model := &pkgingv1alpha1.PackageInstall{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "instl-pkg",
+		},
+		Spec: pkgingv1alpha1.PackageInstallSpec{
+			PackageRef: &pkgingv1alpha1.PackageRef{
+				RefName: "expected-pkg",
+				VersionSelection: &versions.VersionSelectionSemver{
+					Constraints: "1.0.0",
+				},
+			},
+			ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
+		},
+	}
 	// PackageInstall that has PackageRef with prerelease
 	ip := PackageInstallCR{
-		model: &pkgingv1alpha1.PackageInstall{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "instl-pkg",
-			},
-			Spec: pkgingv1alpha1.PackageInstallSpec{
-				PackageRef: &pkgingv1alpha1.PackageRef{
-					RefName: "expected-pkg",
-					VersionSelection: &versions.VersionSelectionSemver{
-						Constraints: "1.0.0",
-					},
-				},
-				ServiceAccountName: "use-local-cluster-sa", // saname being present indicates use local cluster version
-			},
-		},
+		model:     model,
 		pkgclient: fakePkgClient,
 		log:       log,
+		pdh:       NewPackageDependencyHandler(NewPackageFinder(log, fakePkgClient, componentInfo), fakekappctrl.NewSimpleClientset()),
 	}
 
 	out, err := ip.referencedPkgVersion()
@@ -348,7 +374,7 @@ func Test_PackageRefUsesName(t *testing.T) {
 		t.Fatalf("\nExpected no error from resolving referenced package\nBut got:\n%v\n", err)
 	}
 
-	if !reflect.DeepEqual(out, expectedPackageVersion) {
+	if !reflect.DeepEqual(*out, expectedPackageVersion) {
 		t.Fatalf("\nPackageVersion is not same:\nExpected:\n%#v\nGot:\n%#v\n", expectedPackageVersion, out)
 	}
 }
@@ -688,14 +714,16 @@ func Test_PlaceHolderSecretCreated_WhenPackageInstallUpdated(t *testing.T) {
 	assert.Equal(t, "instl-pkg-fetch-0", app.Spec.Fetch[0].ImgpkgBundle.SecretRef.Name)
 }
 
-func generatePackageWithConstraints(name, version, kcConstraint string, k8sConstraint string) datapkgingv1alpha1.Package {
-	return datapkgingv1alpha1.Package{
+func generatePackageWithConstraints(name, ns, version string, dependencies []datapkgingv1alpha1.Dependency, kcConstraint, k8sConstraint string) *datapkgingv1alpha1.Package {
+	return &datapkgingv1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name + "." + version,
+			Name:      name + "." + version,
+			Namespace: ns,
 		},
 		Spec: datapkgingv1alpha1.PackageSpec{
-			RefName: name,
-			Version: version,
+			RefName:      name,
+			Version:      version,
+			Dependencies: dependencies,
 			KappControllerVersionSelection: &datapkgingv1alpha1.VersionSelection{
 				Constraints: kcConstraint,
 			},
