@@ -5,6 +5,7 @@ package datapackaging
 
 import (
 	kcv1alpha1 "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/kappctrl/v1alpha1"
+	versions "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -70,6 +71,9 @@ type PackageSpec struct {
 	// Must be valid semver (required)
 	// Cannot be empty
 	Version string `json:"version,omitempty"`
+	// Dependencies is the list of all the dependencies of a Package.
+	// +optional
+	Dependencies []Dependency `json:"dependencies,omitempty"`
 	// Description of the licenses that apply to the package software
 	// (optional; Array of strings)
 	Licenses []string `json:"licenses,omitempty"`
@@ -150,4 +154,21 @@ type IncludedSoftware struct {
 	DisplayName string `json:"displayName,omitempty" protobuf:"bytes,1,opt,name=displayName"`
 	Version     string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 	Description string `json:"description,omitempty" protobuf:"bytes,3,opt,name=description"`
+}
+
+// Dependency contains the dependency info for package installation
+type Dependency struct {
+	// Package contains the reference to a Package and version
+	// +optional
+	Package *PackageRef `json:"package,omitempty"`
+}
+
+// PackageRef represents a reference to a package.
+type PackageRef struct {
+	// RefName containes the reference of the Package
+	// +required
+	RefName string `json:"refName,omitempty" protobuf:"bytes,1,req,name=refName"`
+	// Version contains version of the Package
+	// +optional
+	VersionSelection *versions.VersionSelectionSemver `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 }

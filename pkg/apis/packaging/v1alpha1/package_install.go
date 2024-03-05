@@ -79,6 +79,9 @@ type PackageInstallSpec struct {
 	// same as the PackageInstall namespace (optional; v0.48.0+)
 	// +optional
 	DefaultNamespace string `json:"defaultNamespace,omitempty"`
+	// Dependencies that needs overrides or secretRef for values
+	// +optional
+	Dependencies Dependencies `json:"dependencies,omitempty"`
 }
 
 type PackageRef struct {
@@ -110,4 +113,14 @@ type PackageInstallStatus struct {
 	// It does _not_ indicate it was successfully installed.
 	// +optional
 	LastAttemptedVersion string `json:"lastAttemptedVersion,omitempty"`
+}
+
+// Dependencies represents the dependency configuration for a package install
+type Dependencies struct {
+	// Install specifies whether the dependencies needs to be installed
+	// When install is set to false it will only validate the presence of the dependencies,
+	// when set to true it will try to install the Packages
+	// +kubebuilder:default=true
+	// +optional
+	Install bool `json:"install,omitempty"`
 }
