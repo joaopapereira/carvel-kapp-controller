@@ -131,6 +131,11 @@ type IncludedSoftware struct {
 
 // Dependency contains the dependency info for package installation
 type Dependency struct {
+	// Name represents the name of the dependency
+	// +required
+	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+	// Package contains the reference to a Package and version
+	// +optional
 	Package *PackageRef `json:"package,omitempty" protobuf:"bytes,1,opt,name=package"`
 }
 

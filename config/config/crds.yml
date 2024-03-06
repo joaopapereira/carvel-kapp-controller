@@ -100,6 +100,9 @@ spec:
                 items:
                   description: Dependency contains the dependency info for package installation
                   properties:
+                    name:
+                      description: Name represents the name of the dependency
+                      type: string
                     package:
                       description: Package contains the reference to a Package and version
                       properties:
@@ -120,6 +123,8 @@ spec:
                               type: object
                           type: object
                       type: object
+                  required:
+                  - name
                   type: object
                 type: array
               includedSoftware:

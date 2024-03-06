@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging"
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -163,4 +165,74 @@ func contains(errList field.ErrorList, expectedErr field.Error) bool {
 		}
 	}
 	return false
+}
+
+func TestValidatePackageDependencies(t *testing.T) {
+
+	testCases := []struct {
+		name                  string
+		expectedErrorList     []string
+		dependencies          []datapackaging.Dependency
+		expectedErrListLength int
+		testExec              func(t *testing.T)
+	}{
+		{
+			name:                  "Dependency name cannot be empty",
+			dependencies:          []datapackaging.Dependency{{}},
+			expectedErrListLength: 1,
+			expectedErrorList:     []string{"spec.dependencies[0].name: Required value: cannot be empty"},
+		},
+		{
+			name:                  "Dependency name cannot be empty - for multiple dependencies",
+			dependencies:          []datapackaging.Dependency{{}, {}},
+			expectedErrListLength: 2,
+			expectedErrorList: []string{
+				"spec.dependencies[0].name: Required value: cannot be empty",
+				"spec.dependencies[1].name: Required value: cannot be empty",
+			},
+		},
+		{
+			name:                  "Dependency name should be unique",
+			dependencies:          []datapackaging.Dependency{{Name: "dep-1"}, {Name: "dep-1"}},
+			expectedErrListLength: 1,
+			expectedErrorList:     []string{"spec.dependencies[1].name: Invalid value: \"dep-1\": should be unique"},
+		},
+		{
+			name: "Dependency.*.Package.RefName cannot be empty",
+			dependencies: []datapackaging.Dependency{
+				{
+					Name:    "dep-1",
+					Package: &datapackaging.PackageRef{},
+				},
+			},
+			expectedErrListLength: 1,
+			expectedErrorList:     []string{"spec.dependencies[0].package.refName: Required value: cannot be empty"},
+		},
+		{
+			name: "ValidatePackageDependencies - Success",
+			dependencies: []datapackaging.Dependency{
+				{
+					Name: "dep-1",
+					Package: &datapackaging.PackageRef{
+						RefName: "test-pkg",
+					},
+				},
+			},
+		},
+		{
+			name:         "ValidatePackageDependencies, Package key can be ignored - Success",
+			dependencies: []datapackaging.Dependency{{Name: "dep-1"}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			errList := validation.ValidatePackageDependencies(tc.dependencies)
+			require.Len(t, errList, tc.expectedErrListLength)
+			for _, err := range errList {
+				require.Contains(t, tc.expectedErrorList, err.Error())
+			}
+		})
+	}
+
 }

@@ -1653,12 +1653,22 @@ func schema_apiserver_apis_datapackaging_v1alpha1_Dependency(ref common.Referenc
 				Description: "Dependency contains the dependency info for package installation",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Name represents the name of the dependency",
+							Default:     "",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"package": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/v1alpha1.PackageRef"),
+							Description: "Package contains the reference to a Package and version",
+							Ref:         ref("github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/v1alpha1.PackageRef"),
 						},
 					},
 				},
+				Required: []string{"name"},
 			},
 		},
 		Dependencies: []string{
