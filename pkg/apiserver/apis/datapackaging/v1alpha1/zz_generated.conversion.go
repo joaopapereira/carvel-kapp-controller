@@ -176,6 +176,7 @@ func Convert_datapackaging_AppTemplateSpec_To_v1alpha1_AppTemplateSpec(in *datap
 }
 
 func autoConvert_v1alpha1_Dependency_To_datapackaging_Dependency(in *Dependency, out *datapackaging.Dependency, s conversion.Scope) error {
+	out.Name = in.Name
 	out.Package = (*datapackaging.PackageRef)(unsafe.Pointer(in.Package))
 	return nil
 }
@@ -186,6 +187,7 @@ func Convert_v1alpha1_Dependency_To_datapackaging_Dependency(in *Dependency, out
 }
 
 func autoConvert_datapackaging_Dependency_To_v1alpha1_Dependency(in *datapackaging.Dependency, out *Dependency, s conversion.Scope) error {
+	out.Name = in.Name
 	out.Package = (*PackageRef)(unsafe.Pointer(in.Package))
 	return nil
 }

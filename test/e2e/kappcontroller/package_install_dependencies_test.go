@@ -38,10 +38,12 @@ spec:
       refName: pkg.child.carvel.dev
       version:
         constraints: 1.0.0
+    name: dep-1
   - package:
       refName: pkg.child2.carvel.dev
       version:
         constraints: 1.0.0
+    name: dep-2
   template:
     spec:
       fetch:

@@ -46,6 +46,8 @@ func ValidatePackage(pkg datapackaging.Package) field.ErrorList {
 	allErrs = append(allErrs,
 		ValidatePackageName(pkg.ObjectMeta.Name, pkg.Spec.RefName, pkg.Spec.Version, field.NewPath("metadata").Child("name"))...)
 
+	allErrs = append(allErrs, ValidatePackageDependencies(pkg.Spec.Dependencies)...)
+
 	if pkg.Spec.KubernetesVersionSelection != nil {
 		allErrs = append(allErrs,
 			ValidatePackageVersionConstraints(pkg.Spec.KubernetesVersionSelection.Constraints, field.NewPath("spec", "kubernetesVersionSelection", "constraints"))...)
@@ -124,4 +126,25 @@ func IsFullyQualifiedName(fldPath *field.Path, name string) field.ErrorList {
 		return append(allErrors, field.Invalid(fldPath, name, "should be a domain with at least three segments separated by dots"))
 	}
 	return allErrors
+}
+
+// validate package dependencies
+func ValidatePackageDependencies(dependencies []datapackaging.Dependency) field.ErrorList {
+	allErrs := field.ErrorList{}
+	seen := make(map[string]bool)
+	for i, dep := range dependencies {
+		fieldPath := field.NewPath("spec").Child("dependencies").Index(i)
+		if dep.Name == "" {
+			allErrs = append(allErrs, field.Required(fieldPath.Child("name"), "cannot be empty"))
+		} else if seen[dep.Name] {
+			allErrs = append(allErrs, field.Invalid(fieldPath.Child("name"), dep.Name, "should be unique"))
+		} else {
+			seen[dep.Name] = true
+		}
+
+		if dep.Package != nil && dep.Package.RefName == "" {
+			allErrs = append(allErrs, field.Required(fieldPath.Child("package").Child("refName"), "cannot be empty"))
+		}
+	}
+	return allErrs
 }
