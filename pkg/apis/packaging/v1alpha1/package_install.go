@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/kappctrl/v1alpha1"
+	datapkgingv1alpha1 "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/v1alpha1"
 	versions "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -123,4 +124,7 @@ type Dependencies struct {
 	// +kubebuilder:default=true
 	// +optional
 	Install bool `json:"install,omitempty"`
+	// Overides the dependency package versions based on the values provided
+	// +optional
+	Override []*datapkgingv1alpha1.Dependency `json:"override,omitempty"`
 }

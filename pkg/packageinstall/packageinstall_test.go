@@ -93,7 +93,7 @@ func Test_PackageWithConstraints(t *testing.T) {
 
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
-	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []datapkgingv1alpha1.Dependency{}, ">1.0.0 <2.0.0", ">0.15.0")
+	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []*datapkgingv1alpha1.Dependency{}, ">1.0.0 <2.0.0", ">0.15.0")
 	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg)
 
 	model := &pkgingv1alpha1.PackageInstall{
@@ -192,7 +192,7 @@ func Test_Package_NotFound(t *testing.T) {
 func Test_Package_ConstraintNotGiven_ErrorDoesNotContainMessage(t *testing.T) {
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
-	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []datapkgingv1alpha1.Dependency{}, "1.0.0", "")
+	pkg := generatePackageWithConstraints("pkg.test.carvel.dev", "test-ns", "0.0.0", []*datapkgingv1alpha1.Dependency{}, "1.0.0", "")
 	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg)
 
 	componentInfo := FakeComponentInfo{KCVersion: semver.MustParse("1.5.0")}
@@ -229,9 +229,9 @@ func Test_PackageWithConstraints_HighestMatch(t *testing.T) {
 	log := logf.Log.WithName("kc")
 	fakek8s := fake.NewSimpleClientset()
 	pkgName := "pkg.test.carvel.dev"
-	pkg1 := generatePackageWithConstraints(pkgName, "test-ns", "0.4.0", []datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the lowest version but installable
-	pkg2 := generatePackageWithConstraints(pkgName, "test-ns", "0.5.0", []datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the highest installable version
-	pkg3 := generatePackageWithConstraints(pkgName, "test-ns", "1.4.1", []datapkgingv1alpha1.Dependency{}, ">2.0.0", "")       // higher version uninstallable
+	pkg1 := generatePackageWithConstraints(pkgName, "test-ns", "0.4.0", []*datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the lowest version but installable
+	pkg2 := generatePackageWithConstraints(pkgName, "test-ns", "0.5.0", []*datapkgingv1alpha1.Dependency{}, ">0.1.0", ">0.1.0") // this one is the highest installable version
+	pkg3 := generatePackageWithConstraints(pkgName, "test-ns", "1.4.1", []*datapkgingv1alpha1.Dependency{}, ">2.0.0", "")       // higher version uninstallable
 	fakePkgClient := fakeapiserver.NewSimpleClientset(pkg1, pkg2, pkg3)
 
 	model := &pkgingv1alpha1.PackageInstall{
@@ -714,7 +714,7 @@ func Test_PlaceHolderSecretCreated_WhenPackageInstallUpdated(t *testing.T) {
 	assert.Equal(t, "instl-pkg-fetch-0", app.Spec.Fetch[0].ImgpkgBundle.SecretRef.Name)
 }
 
-func generatePackageWithConstraints(name, ns, version string, dependencies []datapkgingv1alpha1.Dependency, kcConstraint, k8sConstraint string) *datapkgingv1alpha1.Package {
+func generatePackageWithConstraints(name, ns, version string, dependencies []*datapkgingv1alpha1.Dependency, kcConstraint, k8sConstraint string) *datapkgingv1alpha1.Package {
 	return &datapkgingv1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name + "." + version,

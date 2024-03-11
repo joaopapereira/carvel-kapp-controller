@@ -31,8 +31,8 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 			name: "Dependency Resolution Successful - single dependency package",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -52,9 +52,9 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 			name: "Dependency Resolution Successful - with multiple dependency packages",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
-						buildDependency("dependency-pkg2", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
+						buildDependency("dep-2", "dependency-pkg2", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -76,8 +76,8 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 			name: "Dependency package not found",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
 					}, "", "",
 				)
 				require.NoError(t, fakePkgClient.Tracker().Add(pkg))
@@ -95,9 +95,9 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 			name: "Multiple dependency packages not found",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
-						buildDependency("dependency-pkg-2", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
+						buildDependency("dep-2", "dependency-pkg-2", "1.0.0"),
 					}, "", "",
 				)
 				require.NoError(t, fakePkgClient.Tracker().Add(pkg))
@@ -112,12 +112,12 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 			},
 		},
 		{
-			name: "One of the depencies not found",
+			name: "One of the dependencies not found",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
-						buildDependency("dependency-pkg2", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
+						buildDependency("dep-2", "dependency-pkg2", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -131,6 +131,83 @@ func Test_PackageDependencyHandler_Resolve(t *testing.T) {
 				expectedError := "Failed to resolve the following dependencies:\n dependency-pkg2/1.0.0 : Expected to find at least one version"
 				require.ErrorContains(t, err, expectedError)
 				require.Equal(t, 0, len(pkgList))
+			},
+		},
+		{
+			name: "Dependency Resolution Successful - with dependency override",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
+				dependencyPkgName := "dependency-pkg"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(dependencyPkgName, dependencyPkgName, "1.0.0"),
+					}, "", "",
+				)
+				dependencyPkg := generatePackageWithConstraints(dependencyPkgName, namespace, "1.0.0", nil, "", "")
+				dependencyPkg2 := generatePackageWithConstraints(dependencyPkgName, namespace, "3.0.0", nil, "", "")
+				require.NoError(t, fakePkgClient.Tracker().Add(pkg))
+				require.NoError(t, fakePkgClient.Tracker().Add(dependencyPkg))
+				require.NoError(t, fakePkgClient.Tracker().Add(dependencyPkg2))
+
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(dependencyPkgName, dependencyPkgName, ">2.0.0"),
+				}
+
+				require.NoError(t, fakeAppClient.Tracker().Add(model))
+				pkgList, err := subject.Resolve(model, pkg)
+				require.NoError(t, err)
+				require.Len(t, pkgList, 1)
+				require.Equal(t, []*datapkgingv1alpha1.Package{dependencyPkg2}, pkgList)
+			},
+		},
+		{
+			name: "Dependency Resolution Fail - Override is invalid",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
+				dependencyPkgName := "dependency-pkg"
+				expectedError := "The following dependency overrides 'dep-invalidName/dependency-pkg' are not defined as dependencies in the Package parent-pkg"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(dependencyPkgName, dependencyPkgName, "1.0.0"),
+					}, "", "",
+				)
+				dependencyPkg := generatePackageWithConstraints(dependencyPkgName, namespace, "1.0.0", nil, "", "")
+				require.NoError(t, fakePkgClient.Tracker().Add(pkg))
+				require.NoError(t, fakePkgClient.Tracker().Add(dependencyPkg))
+
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency("dep-invalidName", dependencyPkgName, ">2.0.0"),
+				}
+				require.NoError(t, fakeAppClient.Tracker().Add(model))
+
+				pkgList, err := subject.Resolve(model, pkg)
+				require.Len(t, pkgList, 0)
+				require.ErrorContains(t, err, expectedError)
+			},
+		},
+		{
+			name: "Dependency Resolution Fail - Overridden package version of expected constraint not found in the cluster",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
+				expectedError := "Failed to resolve the following dependencies:\n dependency-pkg/>2.0.0 : Expected to find at least one version, but did not (details: all=1 -> after-prereleases-filter=1 -> after-kapp-controller-version-check=1 -> after-constraints-filter=0)"
+				dependencyPkgName := "dependency-pkg"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(dependencyPkgName, dependencyPkgName, "1.0.0"),
+					}, "", "",
+				)
+				dependencyPkg := generatePackageWithConstraints(dependencyPkgName, namespace, "1.0.0", nil, "", "")
+				require.NoError(t, fakePkgClient.Tracker().Add(pkg))
+				require.NoError(t, fakePkgClient.Tracker().Add(dependencyPkg))
+
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(dependencyPkgName, dependencyPkgName, ">2.0.0"),
+				}
+				require.NoError(t, fakeAppClient.Tracker().Add(model))
+
+				pkgList, err := subject.Resolve(model, pkg)
+				require.Len(t, pkgList, 0)
+				require.ErrorContains(t, err, expectedError)
 			},
 		},
 	}
@@ -161,8 +238,8 @@ func Test_PackageDependencyHandler_Reconcile(t *testing.T) {
 			name: "Dependency Reconciliation Successful - PackageInstall created for dependency package",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -194,9 +271,9 @@ func Test_PackageDependencyHandler_Reconcile(t *testing.T) {
 			name: "Dependency Reconciliation Successful - PackageInstall created for multiple dependency packages",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
-						buildDependency("dependency-pkg2", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
+						buildDependency("dep-2", "dependency-pkg2", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -240,8 +317,8 @@ func Test_PackageDependencyHandler_Reconcile(t *testing.T) {
 			name: "Dependency Reconciliation Successful - PackageInstall already exist for dependency package",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -275,9 +352,9 @@ func Test_PackageDependencyHandler_Reconcile(t *testing.T) {
 			name: "Dependency Reconciliation Successful - PackageInstall already exist for one of the dependency packages",
 			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler, fakePkgClient *fakeapiserver.Clientset, fakeAppClient *fakekappctrl.Clientset) {
 				pkg := generatePackageWithConstraints(
-					"parent-pkg", namespace, "1.0.0", []datapkgingv1alpha1.Dependency{
-						buildDependency("dependency-pkg", "1.0.0"),
-						buildDependency("dependency-pkg2", "1.0.0"),
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dep-1", "dependency-pkg", "1.0.0"),
+						buildDependency("dep-2", "dependency-pkg2", "1.0.0"),
 					}, "", "",
 				)
 				dependencyPkg := generatePackageWithConstraints("dependency-pkg", namespace, "1.0.0", nil, "", "")
@@ -336,8 +413,145 @@ func Test_PackageDependencyHandler_Reconcile(t *testing.T) {
 
 }
 
-func buildDependency(refName string, version string) datapkgingv1alpha1.Dependency {
-	return datapkgingv1alpha1.Dependency{
+func Test_PackageDependencyHandler_PackageVersionOverrides(t *testing.T) {
+	namespace := "default-ns"
+	testCases := []struct {
+		name     string
+		testExec func(t *testing.T, subject *packageinstall.PackageDependencyHandler)
+	}{
+		{
+			name: "PackageVersionOverrides - successful",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				depPkgName := "dependency-pkg"
+				expectedVersionSelectionConstraint := ">2.0.0"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(depPkgName, depPkgName, "1.0.0"),
+					}, "", "",
+				)
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(depPkgName, depPkgName, expectedVersionSelectionConstraint),
+				}
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.NoError(t, err)
+				require.Equal(t, overridesMap[depPkgName].Constraints, expectedVersionSelectionConstraint)
+			},
+		},
+		{
+			name: "PackageVersionOverrides - successful for multiple overrides",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				depPkgName := "dependency-pkg"
+				depPkgName2 := "dependency-pkg2"
+				expectedVersionSelectionConstraint := ">2.0.0"
+				expectedVersionSelectionConstraint2 := "2.0.0"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(depPkgName, depPkgName, "1.0.0"),
+						buildDependency(depPkgName2, depPkgName2, "3.0.0"),
+					}, "", "",
+				)
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(depPkgName, depPkgName, expectedVersionSelectionConstraint),
+					buildDependency(depPkgName2, depPkgName2, expectedVersionSelectionConstraint2),
+				}
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.NoError(t, err)
+				require.Equal(t, overridesMap[depPkgName].Constraints, expectedVersionSelectionConstraint)
+				require.Equal(t, overridesMap[depPkgName2].Constraints, expectedVersionSelectionConstraint2)
+			},
+		},
+		{
+			name: "PackageVersionOverrides - fail, override name not found",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dependency-pkg-2", "dependency-pkg", "1.0.0"),
+					}, "", "")
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency("dependency-pkg", "dependency-pkg", ">2.0.0"),
+				}
+				expectedError := "The following dependency overrides 'dependency-pkg/dependency-pkg' are not defined as dependencies in the Package parent-pkg"
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.Nil(t, overridesMap)
+				require.ErrorContains(t, err, expectedError)
+			},
+		},
+		{
+			name: "PackageVersionOverrides - fail multiple override names not found",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency("dependency-pkg-3", "dependency-pkg", "1.0.0"),
+					}, "", "")
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency("dependency-pkg", "fakeRef1", "1.0.0"),
+					buildDependency("dependency-pkg2", "fakeRef2", "1.0.0"),
+				}
+				expectedError := "The following dependency overrides 'dependency-pkg/fakeRef1, dependency-pkg2/fakeRef2' are not defined as dependencies in the Package parent-pkg"
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.Nil(t, overridesMap)
+				require.ErrorContains(t, err, expectedError)
+			},
+		},
+		{
+			name: "PackageVersionOverrides - fail override PackageRef.Name not found",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				depPkgName := "dependency-pkg"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(depPkgName, depPkgName, "1.0.0"),
+					}, "", "")
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(depPkgName, "invalid-refName", "1.0.0"),
+				}
+				expectedError := "The following dependency overrides 'dependency-pkg/invalid-refName' are not defined as dependencies in the Package parent-pkg"
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.Nil(t, overridesMap)
+				require.ErrorContains(t, err, expectedError)
+			},
+		},
+		{
+			name: "PackageVersionOverrides - fail override  multiple PackageRef.Name not found",
+			testExec: func(t *testing.T, subject *packageinstall.PackageDependencyHandler) {
+				depPkgName := "dependency-pkg"
+				depPkgName2 := "dependency-pkg2"
+				pkg := generatePackageWithConstraints(
+					"parent-pkg", namespace, "1.0.0", []*datapkgingv1alpha1.Dependency{
+						buildDependency(depPkgName, depPkgName, "1.0.0"),
+					}, "", "")
+				model := buildPackageInstall("parent-pkgi", namespace, "parent-pkg", "1.0.0", "use-local-cluster-sa", true, true)
+
+				model.Spec.Dependencies.Override = []*datapkgingv1alpha1.Dependency{
+					buildDependency(depPkgName, "invalid-refName", "1.0.0"),
+					buildDependency(depPkgName2, "invalid-refName2", "1.0.0"),
+				}
+				expectedError := "The following dependency overrides 'dependency-pkg/invalid-refName, dependency-pkg2/invalid-refName2' are not defined as dependencies in the Package parent-pkg"
+				overridesMap, err := subject.PackageVersionOverrides(model, pkg.Spec.Dependencies)
+				require.Nil(t, overridesMap)
+				require.ErrorContains(t, err, expectedError)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pdh := &packageinstall.PackageDependencyHandler{}
+			tc.testExec(t, pdh)
+		})
+	}
+}
+
+func buildDependency(depName string, refName string, version string) *datapkgingv1alpha1.Dependency {
+	return &datapkgingv1alpha1.Dependency{
+		Name: depName,
 		Package: &datapkgingv1alpha1.PackageRef{
 			RefName: refName,
 			VersionSelection: &versions.VersionSelectionSemver{
@@ -355,12 +569,7 @@ func buildPackageInstall(name, namespace, refName, version, saName string, addDe
 			Namespace: namespace,
 		},
 		Spec: pkgingv1alpha1.PackageInstallSpec{
-			PackageRef: &pkgingv1alpha1.PackageRef{
-				RefName: refName,
-				VersionSelection: &versions.VersionSelectionSemver{
-					Constraints: version,
-				},
-			},
+			PackageRef:         getPackageRef(refName, version),
 			ServiceAccountName: saName,
 		},
 	}
@@ -373,7 +582,7 @@ func buildPackageInstall(name, namespace, refName, version, saName string, addDe
 	return pkgInstall
 }
 
-func generatePackageWithConstraints(name, ns, version string, dependencies []datapkgingv1alpha1.Dependency, kcConstraint, k8sConstraint string) *datapkgingv1alpha1.Package {
+func generatePackageWithConstraints(name, ns, version string, dependencies []*datapkgingv1alpha1.Dependency, kcConstraint, k8sConstraint string) *datapkgingv1alpha1.Package {
 	return &datapkgingv1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name + "." + version,
@@ -397,4 +606,13 @@ func getPackageInstalls(fakekctrl *fakekappctrl.Clientset, namespace string) (ru
 	gvr := schema.GroupVersionResource{"packaging.carvel.dev", "v1alpha1", "packageinstalls"}
 	gvk := schema.GroupVersionKind{Group: "packaging.carvel.dev", Version: "v1alpha1", Kind: "PackageInstall"}
 	return fakekctrl.Tracker().List(gvr, gvk, namespace)
+}
+
+func getPackageRef(refName string, constraint string) *pkgingv1alpha1.PackageRef {
+	return &pkgingv1alpha1.PackageRef{
+		RefName: refName,
+		VersionSelection: &versions.VersionSelectionSemver{
+			Constraints: constraint,
+		},
+	}
 }

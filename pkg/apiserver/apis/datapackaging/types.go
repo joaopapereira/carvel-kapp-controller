@@ -73,7 +73,7 @@ type PackageSpec struct {
 	Version string `json:"version,omitempty"`
 	// Dependencies is the list of all the dependencies of a Package.
 	// +optional
-	Dependencies []Dependency `json:"dependencies,omitempty"`
+	Dependencies []*Dependency `json:"dependencies,omitempty"`
 	// Description of the licenses that apply to the package software
 	// (optional; Array of strings)
 	Licenses []string `json:"licenses,omitempty"`

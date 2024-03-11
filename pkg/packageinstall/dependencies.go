@@ -43,13 +43,24 @@ func NewPackageDependencyHandler(finder *PackageFinder, kcclient kcclient.Interf
 func (pdh *PackageDependencyHandler) Resolve(pkgi *pkgingv1alpha1.PackageInstall, pkg *v1alpha1.Package) ([]*v1alpha1.Package, error) {
 	var dependencies []*v1alpha1.Package
 	var missingDependencies []string
+
+	overridesMap, err := pdh.PackageVersionOverrides(pkgi, pkg.Spec.Dependencies)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check if packages exist in the cluster
 	for _, dep := range pkg.Spec.Dependencies {
 		switch {
 		case dep.Package != nil:
-			pkg, err := pdh.finder.Find(pkgi, dep.Package.RefName, dep.Package.VersionSelection)
+			version := dep.Package.VersionSelection
+			if newVersion, ok := overridesMap[dep.Name]; ok {
+				version = newVersion
+			}
+
+			pkg, err := pdh.finder.Find(pkgi, dep.Package.RefName, version)
 			if err != nil {
-				errorMsg := fmt.Sprintf("%s : %+v", dep.Package.RefName+"/"+dep.Package.VersionSelection.Constraints, err)
+				errorMsg := fmt.Sprintf("%s : %+v", dep.Package.RefName+"/"+version.Constraints, err)
 				missingDependencies = append(missingDependencies, errorMsg)
 				continue
 			}
@@ -111,4 +122,32 @@ func (pdh *PackageDependencyHandler) Reconcile(pkgi *pkgingv1alpha1.PackageInsta
 		}
 	}
 	return nil
+}
+
+// PackageVersionOverrides overrides the dependencies based on PackageInstall
+func (pdh *PackageDependencyHandler) PackageVersionOverrides(pkgi *pkgingv1alpha1.PackageInstall, dependencies []*v1alpha1.Dependency) (map[string]*versionsv1alpha1.VersionSelectionSemver, error) {
+	// store the dependency packages that can be overridden in a map
+	depPackages := make(map[string]string)
+	for _, dep := range dependencies {
+		if dep.Package != nil {
+			depPackages[dep.Name] = dep.Package.RefName
+		}
+	}
+
+	// store the package overrides to the map
+	overridesMap := make(map[string]*versionsv1alpha1.VersionSelectionSemver)
+	invalidOverrides := []string{}
+	for _, override := range pkgi.Spec.Dependencies.Override {
+		if pkgRefName, ok := depPackages[override.Name]; ok && override.Package.RefName == pkgRefName {
+			overridesMap[override.Name] = override.Package.VersionSelection
+		} else {
+			invalidOverrides = append(invalidOverrides, override.Name+"/"+override.Package.RefName)
+		}
+	}
+
+	if len(invalidOverrides) > 0 {
+		return nil, fmt.Errorf("The following dependency overrides '" + strings.Join(invalidOverrides, ", ") +
+			"' are not defined as dependencies in the Package " + pkgi.Spec.PackageRef.RefName)
+	}
+	return overridesMap, nil
 }

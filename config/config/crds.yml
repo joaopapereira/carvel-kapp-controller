@@ -1550,6 +1550,38 @@ spec:
                     default: true
                     description: Install specifies whether the dependencies needs to be installed When install is set to false it will only validate the presence of the dependencies, when set to true it will try to install the Packages
                     type: boolean
+                  override:
+                    description: Overides the dependency package versions based on the values provided
+                    items:
+                      description: Dependency contains the dependency info for package installation
+                      properties:
+                        name:
+                          description: Name represents the name of the dependency
+                          type: string
+                        package:
+                          description: Package contains the reference to a Package and version
+                          properties:
+                            refName:
+                              description: RefName containes the reference of the Package
+                              type: string
+                            version:
+                              description: Version contains version of the Package
+                              properties:
+                                constraints:
+                                  type: string
+                                prereleases:
+                                  properties:
+                                    identifiers:
+                                      items:
+                                        type: string
+                                      type: array
+                                  type: object
+                              type: object
+                          type: object
+                      required:
+                      - name
+                      type: object
+                    type: array
                 type: object
               noopDelete:
                 description: When NoopDelete set to true, PackageInstall deletion should delete PackageInstall/App CR but preserve App's associated resources.
