@@ -62,8 +62,8 @@ type PackageSpec struct {
 	RefName string `json:"refName,omitempty" protobuf:"bytes,1,opt,name=refName"`
 	Version string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 	// Dependencies is the list of all the dependencies of a Package.
-	Dependencies []Dependency `json:"dependencies,omitempty" protobuf:"bytes,12,rep,name=dependencies"`
-	Licenses     []string     `json:"licenses,omitempty" protobuf:"bytes,3,rep,name=licenses"`
+	Dependencies []*Dependency `json:"dependencies,omitempty" protobuf:"bytes,12,rep,name=dependencies"`
+	Licenses     []string      `json:"licenses,omitempty" protobuf:"bytes,3,rep,name=licenses"`
 	// +optional
 	// +nullable
 	ReleasedAt                      metav1.Time `json:"releasedAt,omitempty" protobuf:"bytes,4,opt,name=releasedAt"`

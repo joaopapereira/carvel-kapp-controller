@@ -368,7 +368,7 @@ type pkgWithConstraints struct {
 	name          string
 	ns            string
 	version       string
-	dependencies  []datapkgingv1alpha1.Dependency
+	dependencies  []*datapkgingv1alpha1.Dependency
 	kcConstraint  string
 	k8sConstraint string
 }

@@ -128,8 +128,8 @@ func IsFullyQualifiedName(fldPath *field.Path, name string) field.ErrorList {
 	return allErrors
 }
 
-// validate package dependencies
-func ValidatePackageDependencies(dependencies []datapackaging.Dependency) field.ErrorList {
+// ValidatePackageDependencies validates package dependencies
+func ValidatePackageDependencies(dependencies []*datapackaging.Dependency) field.ErrorList {
 	allErrs := field.ErrorList{}
 	seen := make(map[string]bool)
 	for i, dep := range dependencies {

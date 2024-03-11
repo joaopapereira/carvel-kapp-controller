@@ -396,7 +396,7 @@ func Convert_datapackaging_PackageRef_To_v1alpha1_PackageRef(in *datapackaging.P
 func autoConvert_v1alpha1_PackageSpec_To_datapackaging_PackageSpec(in *PackageSpec, out *datapackaging.PackageSpec, s conversion.Scope) error {
 	out.RefName = in.RefName
 	out.Version = in.Version
-	out.Dependencies = *(*[]datapackaging.Dependency)(unsafe.Pointer(&in.Dependencies))
+	out.Dependencies = *(*[]*datapackaging.Dependency)(unsafe.Pointer(&in.Dependencies))
 	out.Licenses = *(*[]string)(unsafe.Pointer(&in.Licenses))
 	out.ReleasedAt = in.ReleasedAt
 	out.CapactiyRequirementsDescription = in.CapactiyRequirementsDescription
@@ -421,7 +421,7 @@ func Convert_v1alpha1_PackageSpec_To_datapackaging_PackageSpec(in *PackageSpec, 
 func autoConvert_datapackaging_PackageSpec_To_v1alpha1_PackageSpec(in *datapackaging.PackageSpec, out *PackageSpec, s conversion.Scope) error {
 	out.RefName = in.RefName
 	out.Version = in.Version
-	out.Dependencies = *(*[]Dependency)(unsafe.Pointer(&in.Dependencies))
+	out.Dependencies = *(*[]*Dependency)(unsafe.Pointer(&in.Dependencies))
 	out.Licenses = *(*[]string)(unsafe.Pointer(&in.Licenses))
 	out.ReleasedAt = in.ReleasedAt
 	out.CapactiyRequirementsDescription = in.CapactiyRequirementsDescription

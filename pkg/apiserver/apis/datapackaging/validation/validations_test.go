@@ -172,19 +172,19 @@ func TestValidatePackageDependencies(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		expectedErrorList     []string
-		dependencies          []datapackaging.Dependency
+		dependencies          []*datapackaging.Dependency
 		expectedErrListLength int
 		testExec              func(t *testing.T)
 	}{
 		{
 			name:                  "Dependency name cannot be empty",
-			dependencies:          []datapackaging.Dependency{{}},
+			dependencies:          []*datapackaging.Dependency{{}},
 			expectedErrListLength: 1,
 			expectedErrorList:     []string{"spec.dependencies[0].name: Required value: cannot be empty"},
 		},
 		{
 			name:                  "Dependency name cannot be empty - for multiple dependencies",
-			dependencies:          []datapackaging.Dependency{{}, {}},
+			dependencies:          []*datapackaging.Dependency{{}, {}},
 			expectedErrListLength: 2,
 			expectedErrorList: []string{
 				"spec.dependencies[0].name: Required value: cannot be empty",
@@ -193,13 +193,13 @@ func TestValidatePackageDependencies(t *testing.T) {
 		},
 		{
 			name:                  "Dependency name should be unique",
-			dependencies:          []datapackaging.Dependency{{Name: "dep-1"}, {Name: "dep-1"}},
+			dependencies:          []*datapackaging.Dependency{{Name: "dep-1"}, {Name: "dep-1"}},
 			expectedErrListLength: 1,
 			expectedErrorList:     []string{"spec.dependencies[1].name: Invalid value: \"dep-1\": should be unique"},
 		},
 		{
 			name: "Dependency.*.Package.RefName cannot be empty",
-			dependencies: []datapackaging.Dependency{
+			dependencies: []*datapackaging.Dependency{
 				{
 					Name:    "dep-1",
 					Package: &datapackaging.PackageRef{},
@@ -210,7 +210,7 @@ func TestValidatePackageDependencies(t *testing.T) {
 		},
 		{
 			name: "ValidatePackageDependencies - Success",
-			dependencies: []datapackaging.Dependency{
+			dependencies: []*datapackaging.Dependency{
 				{
 					Name: "dep-1",
 					Package: &datapackaging.PackageRef{
@@ -221,7 +221,7 @@ func TestValidatePackageDependencies(t *testing.T) {
 		},
 		{
 			name:         "ValidatePackageDependencies, Package key can be ignored - Success",
-			dependencies: []datapackaging.Dependency{{Name: "dep-1"}},
+			dependencies: []*datapackaging.Dependency{{Name: "dep-1"}},
 		},
 	}
 
