@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	kcv1alpha1 "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/kappctrl/v1alpha1"
+	versions "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -58,9 +59,11 @@ type PackageMetadataList struct {
 }
 
 type PackageSpec struct {
-	RefName  string   `json:"refName,omitempty" protobuf:"bytes,1,opt,name=refName"`
-	Version  string   `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
-	Licenses []string `json:"licenses,omitempty" protobuf:"bytes,3,rep,name=licenses"`
+	RefName string `json:"refName,omitempty" protobuf:"bytes,1,opt,name=refName"`
+	Version string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
+	// Dependencies is the list of all the dependencies of a Package.
+	Dependencies []*Dependency `json:"dependencies,omitempty" protobuf:"bytes,12,rep,name=dependencies"`
+	Licenses     []string      `json:"licenses,omitempty" protobuf:"bytes,3,rep,name=licenses"`
 	// +optional
 	// +nullable
 	ReleasedAt                      metav1.Time `json:"releasedAt,omitempty" protobuf:"bytes,4,opt,name=releasedAt"`
@@ -124,4 +127,24 @@ type IncludedSoftware struct {
 	DisplayName string `json:"displayName,omitempty" protobuf:"bytes,1,opt,name=displayName"`
 	Version     string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 	Description string `json:"description,omitempty" protobuf:"bytes,3,opt,name=description"`
+}
+
+// Dependency contains the dependency info for package installation
+type Dependency struct {
+	// Name represents the name of the dependency
+	// +required
+	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+	// Package contains the reference to a Package and version
+	// +optional
+	Package *PackageRef `json:"package,omitempty" protobuf:"bytes,1,opt,name=package"`
+}
+
+// PackageRef represents a reference to a package.
+type PackageRef struct {
+	// RefName containes the reference of the Package
+	// +required
+	RefName string `json:"refName,omitempty" protobuf:"bytes,1,req,name=refName"`
+	// Version contains version of the Package
+	// +optional
+	VersionSelection *versions.VersionSelectionSemver `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 }

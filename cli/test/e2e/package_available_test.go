@@ -316,3 +316,104 @@ spec:
 		require.Contains(t, out, "does not have any user configurable values")
 	})
 }
+
+func TestPackageAvailableWithDependencies(t *testing.T) {
+	env := BuildEnv(t)
+	logger := Logger{}
+	kapp := Kapp{t, env.Namespace, env.KappBinaryPath, logger}
+	kappCtrl := Kctrl{t, env.Namespace, env.KctrlBinaryPath, logger}
+	appName := "test-package"
+
+	packagesYaml := fmt.Sprintf(`
+---
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: PackageMetadata
+metadata:
+    name: pkg.parent.carvel.dev
+spec:
+    displayName: "Carvel Test Package"
+    shortDescription: "Carvel package for testing installation"
+---
+apiVersion: data.packaging.carvel.dev/v1alpha1
+kind: Package
+metadata:
+  name: pkg.parent.carvel.dev.1.0.0
+spec:
+  refName: pkg.parent.carvel.dev
+  version: 1.0.0
+  dependencies:
+  - package:
+      refName: pkg.child.carvel.dev
+      version:
+        constraints: 1.0.0
+    name: dep-1
+  - package:
+      refName: pkg.child2.carvel.dev
+      version:
+        constraints: 1.0.0
+    name: dep-2
+  template:
+    spec:
+      fetch:
+      - inline:
+          paths:
+            file.yml: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: configmap-of-parent
+      template:
+      - ytt:
+          paths:
+          - file.yml
+      deploy:
+      - kapp: {}
+`)
+	cleanUp := func() {
+		kapp.Run([]string{"delete", "-a", appName})
+	}
+	cleanUp()
+	defer cleanUp()
+
+	logger.Section("listing packages", func() {
+		kapp.RunWithOpts([]string{"deploy", "-a", appName, "-f", "-"}, RunOpts{
+			StdinReader: strings.NewReader(packagesYaml),
+		})
+
+		out := kappCtrl.Run([]string{"package", "available", "list", "--json", "--wide"})
+
+		output := uitest.JSONUIFromBytes(t, []byte(out))
+
+		fmt.Println("Output rows: ", output)
+		expectedOutputRows := []map[string]string{{
+			"name":              "pkg.parent.carvel.dev",
+			"display_name":      "Carvel Test Package",
+			"short_description": "Carvel package for testing installation",
+		}}
+		require.Exactly(t, expectedOutputRows, output.Tables[0].Rows)
+	})
+
+	logger.Section("getting a package", func() {
+		out := kappCtrl.Run([]string{"package", "available", "get", "-p", "pkg.parent.carvel.dev/1.0.0", "--json"})
+
+		output := uitest.JSONUIFromBytes(t, []byte(out))
+		expectedOutputRows := []map[string]string{{
+			"categories":                "",
+			"dependencies":              "- Name: dep-1\n  Package: pkg.child.carvel.dev/1.0.0\n- Name: dep-2\n  Package: pkg.child2.carvel.dev/1.0.0",
+			"display_name":              "Carvel Test Package",
+			"licenses":                  "",
+			"long_description":          "",
+			"maintainers":               "",
+			"min_capacity_requirements": "",
+			"name":                      "pkg.parent.carvel.dev",
+			"provider":                  "",
+			"release_notes":             "",
+			"released_at":               "-",
+			"short_description":         "Carvel package for testing installation",
+			"support_description":       "",
+			"version":                   "1.0.0",
+		}}
+		require.Exactly(t, expectedOutputRows, output.Tables[0].Rows)
+	})
+
+}
