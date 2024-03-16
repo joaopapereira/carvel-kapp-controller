@@ -6,6 +6,7 @@ package packageinstall
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	semver "github.com/k14s/semver/v4"
@@ -16,9 +17,10 @@ import (
 	pkgclient "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/client/clientset/versioned"
 	kcclient "github.com/vmware-tanzu/carvel-kapp-controller/pkg/client/clientset/versioned"
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/client/clientset/versioned/scheme"
+	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/metrics"
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/reconciler"
 	"github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions"
-	verv1alpha1 "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
+	versionsv1alpha1 "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -52,13 +54,42 @@ type PackageInstallCR struct {
 	pkgclient  pkgclient.Interface
 	coreClient kubernetes.Interface
 	compInfo   ComponentInfo
+	opts       Opts
+
+	pkgMetrics *metrics.Metrics
+
+	pdh *PackageDependencyHandler
+}
+
+// DependencyHandler is an interface for resolving and reconciling dependencies for package installs
+type DependencyHandler interface {
+	Resolve(pkgi *pkgingv1alpha1.PackageInstall, pkg *datapkgingv1alpha1.Package) ([]*datapkgingv1alpha1.Package, error)
+	Reconcile(pkgi *pkgingv1alpha1.PackageInstall, deps []*datapkgingv1alpha1.Package) error
+}
+
+// Finder is an interface for finding package for a package install
+type Finder interface {
+	Find(pkgi *pkgingv1alpha1.PackageInstall, packageRef string, semverConfig *versionsv1alpha1.VersionSelectionSemver) (*datapkgingv1alpha1.Package, error)
+}
+
+// Kind return kind of pkg install
+func (pi *PackageInstallCR) Kind() string {
+	return "PackageInstall"
+}
+
+// nolint: revive
+type Opts struct {
+	DefaultSyncPeriod time.Duration
 }
 
 func NewPackageInstallCR(model *pkgingv1alpha1.PackageInstall, log logr.Logger,
-	kcclient kcclient.Interface, pkgclient pkgclient.Interface, coreClient kubernetes.Interface, compInfo ComponentInfo) *PackageInstallCR {
+	kcclient kcclient.Interface, pkgclient pkgclient.Interface, coreClient kubernetes.Interface,
+	compInfo ComponentInfo, opts Opts, pkgMetrics *metrics.Metrics) *PackageInstallCR {
+	pdh := NewPackageDependencyHandler(NewPackageFinder(log, pkgclient, compInfo), kcclient)
 
 	return &PackageInstallCR{model: model, unmodifiedModel: model.DeepCopy(), log: log,
-		kcclient: kcclient, pkgclient: pkgclient, coreClient: coreClient, compInfo: compInfo}
+		kcclient: kcclient, pkgclient: pkgclient, coreClient: coreClient, compInfo: compInfo, opts: opts, pkgMetrics: pkgMetrics,
+		pdh: pdh}
 }
 
 func (pi *PackageInstallCR) Reconcile() (reconcile.Result, error) {
@@ -66,6 +97,8 @@ func (pi *PackageInstallCR) Reconcile() (reconcile.Result, error) {
 		pi.model.Status.GenericStatus,
 		func(st kcv1alpha1.GenericStatus) { pi.model.Status.GenericStatus = st },
 	}
+
+	pi.pkgMetrics.ReconcileCountMetrics.InitMetrics(pi.Kind(), pi.model.Name, pi.model.Namespace)
 
 	var result reconcile.Result
 	var err error
@@ -93,6 +126,14 @@ func (pi *PackageInstallCR) Reconcile() (reconcile.Result, error) {
 
 func (pi *PackageInstallCR) reconcile(modelStatus *reconciler.Status) (reconcile.Result, error) {
 	pi.log.Info("Reconciling")
+	pi.pkgMetrics.ReconcileCountMetrics.RegisterReconcileAttempt(pi.Kind(), pi.model.Name, pi.model.Namespace)
+
+	reconcileStartTime := time.Now()
+	pi.pkgMetrics.IsFirstReconcile = pi.pkgMetrics.ReconcileCountMetrics.GetReconcileAttemptCounterValue(pi.Kind(), pi.model.Name, pi.model.Namespace) == 1
+	defer func() {
+		pi.pkgMetrics.ReconcileTimeMetrics.RegisterOverallTime(pi.Kind(), pi.model.Name, pi.model.Namespace,
+			pi.pkgMetrics.IsFirstReconcile, time.Since(reconcileStartTime))
+	}()
 
 	err := pi.blockDeletion()
 	if err != nil {
@@ -142,6 +183,22 @@ func (pi *PackageInstallCR) reconcile(modelStatus *reconciler.Status) (reconcile
 
 	pi.model.Status.LastAttemptedVersion = pkg.Spec.Version
 
+	dependencyList, err := pi.pdh.Resolve(pi.model, pkg)
+	if err != nil {
+		modelStatus.SetReconcileCompleted(err)
+		modelStatus.SetUsefulErrorMessage(err.Error())
+		return reconcile.Result{}, err
+	}
+
+	if pi.model.Spec.Dependencies.Install {
+		err := pi.pdh.Reconcile(pi.model, dependencyList)
+		if err != nil {
+			modelStatus.SetReconcileCompleted(err)
+			modelStatus.SetUsefulErrorMessage(err.Error())
+			return reconcile.Result{}, err
+		}
+	}
+
 	existingApp, err := pi.kcclient.KappctrlV1alpha1().Apps(pi.model.Namespace).Get(
 		context.Background(), pi.model.Name, metav1.GetOptions{})
 	if err != nil {
@@ -174,7 +231,7 @@ func (pi *PackageInstallCR) reconcile(modelStatus *reconciler.Status) (reconcile
 }
 
 func (pi *PackageInstallCR) createAppFromPackage(pkg datapkgingv1alpha1.Package) (reconcile.Result, error) {
-	desiredApp, err := NewApp(&v1alpha1.App{}, pi.model, pkg)
+	desiredApp, err := NewApp(&v1alpha1.App{}, pi.model, pkg, pi.opts)
 	if err != nil {
 		return reconcile.Result{Requeue: true}, err
 	}
@@ -187,13 +244,13 @@ func (pi *PackageInstallCR) createAppFromPackage(pkg datapkgingv1alpha1.Package)
 	return reconcile.Result{}, nil
 }
 
-func (pi *PackageInstallCR) reconcileAppWithPackage(existingApp *kcv1alpha1.App, pkg datapkgingv1alpha1.Package) (reconcile.Result, error) {
+func (pi *PackageInstallCR) reconcileAppWithPackage(existingApp *kcv1alpha1.App, pkg *datapkgingv1alpha1.Package) (reconcile.Result, error) {
 	pkgWithPlaceholderSecrets, err := pi.reconcileFetchPlaceholderSecrets(pkg)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	desiredApp, err := NewApp(existingApp, pi.model, pkgWithPlaceholderSecrets)
+	desiredApp, err := NewApp(existingApp, pi.model, pkgWithPlaceholderSecrets, pi.opts)
 	if err != nil {
 		return reconcile.Result{Requeue: true}, err
 	}
@@ -209,130 +266,17 @@ func (pi *PackageInstallCR) reconcileAppWithPackage(existingApp *kcv1alpha1.App,
 	return reconcile.Result{}, nil
 }
 
-func pkgHasK8sConstraint(pkg *datapkgingv1alpha1.Package) bool {
-	return pkg.Spec.KubernetesVersionSelection != nil && pkg.Spec.KubernetesVersionSelection.Constraints != ""
-}
-
-func (pi *PackageInstallCR) clusterVersionConstraintsSatisfied(pkg *datapkgingv1alpha1.Package, clusterVersion semver.Version) bool {
-	if !pkgHasK8sConstraint(pkg) {
-		return true
-	}
-	const kubernetesVersionOverrideAnnotation = "packaging.carvel.dev/ignore-kubernetes-version-selection"
-
-	_, found := pi.model.Annotations[kubernetesVersionOverrideAnnotation]
-	if found {
-		pi.log.Info("Found kubernetes version override annotation; not applying version constraints")
-		return true
-	}
-
-	constraintsFunc, _ := semver.ParseRange(pkg.Spec.KubernetesVersionSelection.Constraints) // ignore err because validation should have already caught it
-	return constraintsFunc(clusterVersion)
-}
-
-func (pi *PackageInstallCR) kcVersionConstraintsSatisfied(pkg *datapkgingv1alpha1.Package) bool {
-	if pkg.Spec.KappControllerVersionSelection == nil || pkg.Spec.KappControllerVersionSelection.Constraints == "" {
-		return true
-	}
-	const kappControllerVersionOverrideAnnotation = "packaging.carvel.dev/ignore-kapp-controller-version-selection"
-
-	_, found := pi.model.Annotations[kappControllerVersionOverrideAnnotation]
-	if found {
-		pi.log.Info("Found kapp-controller version override annotation; not applying version constraints")
-		return true
-	}
-
-	v, err := pi.compInfo.KappControllerVersion()
-	if err != nil {
-		return false
-	}
-
-	v.Pre = semver.PRVersion{}
-	v.Build = semver.BuildMeta{}
-
-	constraints, _ := semver.ParseRange(pkg.Spec.KappControllerVersionSelection.Constraints) // ignore err because validation should have already caught it
-	return constraints(v)
-}
-
-func (pi *PackageInstallCR) referencedPkgVersion() (datapkgingv1alpha1.Package, error) {
+func (pi *PackageInstallCR) referencedPkgVersion() (*datapkgingv1alpha1.Package, error) {
 	if pi.model.Spec.PackageRef == nil {
-		return datapkgingv1alpha1.Package{}, fmt.Errorf("Expected non nil PackageRef")
+		return nil, fmt.Errorf("Expected non nil PackageRef")
 	}
 
 	semverConfig := pi.model.Spec.PackageRef.VersionSelection
 	if semverConfig == nil {
-		return datapkgingv1alpha1.Package{}, fmt.Errorf("Expected non-empty version selection")
+		return nil, fmt.Errorf("Expected non-empty version selection")
 	}
 
-	pkgList, err := pi.pkgclient.DataV1alpha1().Packages(pi.model.Namespace).List(
-		context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return datapkgingv1alpha1.Package{}, err
-	}
-	if len(pkgList.Items) == 0 {
-		return datapkgingv1alpha1.Package{}, fmt.Errorf("Package %s not found", pi.model.Spec.PackageRef.RefName)
-	}
-
-	var versionStrs []string
-	versionToPkg := map[string]datapkgingv1alpha1.Package{}
-
-	requiresClusterVersion := false
-	for _, pkg := range pkgList.Items {
-		if pkg.Spec.RefName == pi.model.Spec.PackageRef.RefName {
-			versionStrs = append(versionStrs, pkg.Spec.Version)
-			versionToPkg[pkg.Spec.Version] = pkg
-
-			if pkgHasK8sConstraint(&pkg) {
-				requiresClusterVersion = true
-			}
-		}
-	}
-
-	// If constraint is a single specified version, then we
-	// do not want to force user to manually set prereleases={}
-	if len(semverConfig.Constraints) > 0 && semverConfig.Prereleases == nil {
-		// Will error if it's not a single version
-		singleVer, err := versions.NewSemver(semverConfig.Constraints)
-		if err == nil && len(singleVer.Pre) > 0 {
-			semverConfig.Prereleases = &verv1alpha1.VersionSelectionSemverPrereleases{}
-		}
-	}
-
-	vcc := []versions.ConstraintCallback{}
-
-	// we only need to populate the versionInfo we know that the packages have constraints that will require this info.
-	if requiresClusterVersion {
-		v, err := pi.compInfo.KubernetesVersion(pi.model.Spec.ServiceAccountName, pi.model.Spec.Cluster, &pi.model.ObjectMeta)
-		if err != nil {
-			return datapkgingv1alpha1.Package{}, fmt.Errorf("Unable to get kubernetes version: %s", err)
-		}
-
-		k8sConstraint := func(pkgVer string) bool {
-			pkg := versionToPkg[pkgVer]
-			return pi.clusterVersionConstraintsSatisfied(&pkg, v)
-		}
-
-		vcc = append(vcc, versions.ConstraintCallback{Constraint: k8sConstraint, Name: "kubernetes-version-check"})
-	}
-
-	kcConstraint := func(pkgVer string) bool {
-		pkg := versionToPkg[pkgVer]
-		return pi.kcVersionConstraintsSatisfied(&pkg)
-	}
-
-	vcc = append(vcc, versions.ConstraintCallback{Constraint: kcConstraint, Name: "kapp-controller-version-check"})
-
-	verConfig := verv1alpha1.VersionSelection{Semver: semverConfig}
-	selectedVersion, err := versions.HighestConstrainedVersionWithAdditionalConstraints(versionStrs, verConfig, vcc)
-	if err != nil {
-		return datapkgingv1alpha1.Package{}, err
-	}
-
-	if pkg, found := versionToPkg[selectedVersion]; found {
-		return pkg, nil
-	}
-
-	return datapkgingv1alpha1.Package{}, fmt.Errorf("Could not find package with name '%s' and version '%s'",
-		pi.model.Spec.PackageRef.RefName, selectedVersion)
+	return pi.pdh.finder.Find(pi.model, pi.model.Spec.PackageRef.RefName, semverConfig)
 }
 
 func (pi *PackageInstallCR) reconcileDelete(modelStatus *reconciler.Status) (reconcile.Result, error) {
@@ -366,6 +310,7 @@ func (pi *PackageInstallCR) reconcileDelete(modelStatus *reconciler.Status) (rec
 	if existingApp.Spec.Canceled != pi.model.Spec.Canceled {
 		existingApp.Spec.Canceled = pi.model.Spec.Canceled
 	}
+	existingApp.Spec.DefaultNamespace = pi.model.Spec.DefaultNamespace
 
 	if !equality.Semantic.DeepEqual(existingApp, unchangeExistingApp) {
 		existingApp, err = pi.kcclient.KappctrlV1alpha1().Apps(existingApp.Namespace).Update(
@@ -464,8 +409,8 @@ func (pi *PackageInstallCR) update(updateFunc func(*pkgingv1alpha1.PackageInstal
 	return fmt.Errorf("Updating package install: %s", lastErr)
 }
 
-func (pi *PackageInstallCR) reconcileFetchPlaceholderSecrets(pkg datapkgingv1alpha1.Package) (datapkgingv1alpha1.Package, error) {
-	pkg = *pkg.DeepCopy()
+func (pi *PackageInstallCR) reconcileFetchPlaceholderSecrets(pkgSrc *datapkgingv1alpha1.Package) (datapkgingv1alpha1.Package, error) {
+	pkg := pkgSrc.DeepCopy()
 	for i, fetch := range pkg.Spec.Template.Spec.Fetch {
 		if fetch.ImgpkgBundle != nil && fetch.ImgpkgBundle.SecretRef == nil {
 			secretName, err := pi.createSecretForSecretgenController(i)
@@ -483,7 +428,7 @@ func (pi *PackageInstallCR) reconcileFetchPlaceholderSecrets(pkg datapkgingv1alp
 			pkg.Spec.Template.Spec.Fetch[i].Image.SecretRef = &kcv1alpha1.AppFetchLocalRef{secretName}
 		}
 	}
-	return pkg, nil
+	return *pkg, nil
 }
 
 func (pi PackageInstallCR) createSecretForSecretgenController(iteration int) (string, error) {

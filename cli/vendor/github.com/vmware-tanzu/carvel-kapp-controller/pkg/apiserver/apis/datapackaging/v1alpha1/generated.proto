@@ -6,6 +6,7 @@ syntax = "proto2";
 package github.com.vmware_tanzu.carvel_kapp_controller.pkg.apiserver.apis.datapackaging.v1alpha1;
 
 import "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/kappctrl/v1alpha1/generated.proto";
+import "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1/generated.proto";
 import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
 import "k8s.io/apimachinery/pkg/runtime/generated.proto";
 import "k8s.io/apimachinery/pkg/runtime/schema/generated.proto";
@@ -15,6 +16,17 @@ option go_package = "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserve
 
 message AppTemplateSpec {
   optional github.com.vmware_tanzu.carvel_kapp_controller.pkg.apis.kappctrl.v1alpha1.AppSpec spec = 1;
+}
+
+// Dependency contains the dependency info for package installation
+message Dependency {
+  // Name represents the name of the dependency
+  // +required
+  optional string name = 2;
+
+  // Package contains the reference to a Package and version
+  // +optional
+  optional PackageRef package = 1;
 }
 
 // IncludedSoftware contains the underlying Software Contents of a Package
@@ -88,10 +100,24 @@ message PackageMetadataSpec {
   optional string supportDescription = 8;
 }
 
+// PackageRef represents a reference to a package.
+message PackageRef {
+  // RefName containes the reference of the Package
+  // +required
+  optional string refName = 1;
+
+  // Version contains version of the Package
+  // +optional
+  optional github.com.vmware_tanzu.carvel_vendir.pkg.vendir.versions.v1alpha1.VersionSelectionSemver version = 2;
+}
+
 message PackageSpec {
   optional string refName = 1;
 
   optional string version = 2;
+
+  // Dependencies is the list of all the dependencies of a Package.
+  repeated Dependency dependencies = 12;
 
   repeated string licenses = 3;
 

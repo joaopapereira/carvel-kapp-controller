@@ -38,8 +38,9 @@ type configData struct {
 	kappDeployRawOptions []string
 	skipTLSVerify        string
 
-	appDefaultSyncPeriod time.Duration
-	appMinimumSyncPeriod time.Duration
+	appDefaultSyncPeriod            time.Duration
+	appMinimumSyncPeriod            time.Duration
+	packageInstallDefaultSyncPeriod time.Duration
 }
 
 const (
@@ -163,11 +164,17 @@ func (gc *Config) KappDeployRawOptions() []string {
 	gc.dataLock.RLock()
 	defer gc.dataLock.RUnlock()
 
+	kappOptions := make([]string, 0)
+
 	// Configure kapp to keep only 5 app changes as it seems that
 	// larger number of ConfigMaps negative affects other controllers on the cluster.
 	// Eventually kapp can be smart enough to keep minimal number of app changes.
 	// Set default first so that it can be overridden by user provided options.
-	return append([]string{"--app-changes-max-to-keep=5"}, gc.data.kappDeployRawOptions...)
+	// return append([]string{"--app-changes-max-to-keep=5"}, gc.data.kappDeployRawOptions...)
+	kappOptions = append(kappOptions, "--app-changes-max-to-keep=5")
+	kappOptions = append(kappOptions, "--apply-timeout=5m")
+	kappOptions = append(kappOptions, gc.data.kappDeployRawOptions...)
+	return kappOptions
 }
 
 // AppDefaultSyncPeriod returns duration that is used by Apps
@@ -189,6 +196,20 @@ func (gc *Config) AppMinimumSyncPeriod() time.Duration {
 		return gc.data.appMinimumSyncPeriod
 	}
 	return min
+}
+
+// PackageInstallDefaultSyncPeriod returns duration that is used by Apps
+// that do not explicitly specify sync period.
+func (gc *Config) PackageInstallDefaultSyncPeriod() time.Duration {
+	const defaultSyncPeriod = 10 * time.Minute
+	const minDefaultSyncPeriod = 30 * time.Second
+	if gc.data.packageInstallDefaultSyncPeriod != 0 {
+		if gc.data.packageInstallDefaultSyncPeriod > minDefaultSyncPeriod {
+			return gc.data.packageInstallDefaultSyncPeriod
+		}
+		return minDefaultSyncPeriod
+	}
+	return defaultSyncPeriod
 }
 
 func (gc *Config) addSecretDataToConfig(secret *v1.Secret) error {
@@ -216,6 +237,14 @@ func (gc *Config) addDataToConfig(rawData map[string]string) error {
 			return fmt.Errorf("Unmarshaling appDefaultSyncPeriod as duration: %s", err)
 		}
 		data.appDefaultSyncPeriod = dur
+	}
+
+	if val := rawData["packageInstallDefaultSyncPeriod"]; len(val) > 0 {
+		dur, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("Unmarshaling packageInstallDefaultSyncPeriod as duration: %s", err)
+		}
+		data.packageInstallDefaultSyncPeriod = dur
 	}
 
 	if val := rawData["appMinimumSyncPeriod"]; len(val) > 0 {

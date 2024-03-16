@@ -33,6 +33,7 @@ import (
 	batchv1 "k8s.io/client-go/kubernetes/typed/batch/v1"
 	batchv1beta1 "k8s.io/client-go/kubernetes/typed/batch/v1beta1"
 	certificatesv1 "k8s.io/client-go/kubernetes/typed/certificates/v1"
+	certificatesv1alpha1 "k8s.io/client-go/kubernetes/typed/certificates/v1alpha1"
 	certificatesv1beta1 "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 	coordinationv1 "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	coordinationv1beta1 "k8s.io/client-go/kubernetes/typed/coordination/v1beta1"
@@ -57,7 +58,7 @@ import (
 	rbacv1 "k8s.io/client-go/kubernetes/typed/rbac/v1"
 	rbacv1alpha1 "k8s.io/client-go/kubernetes/typed/rbac/v1alpha1"
 	rbacv1beta1 "k8s.io/client-go/kubernetes/typed/rbac/v1beta1"
-	resourcev1alpha1 "k8s.io/client-go/kubernetes/typed/resource/v1alpha1"
+	resourcev1alpha2 "k8s.io/client-go/kubernetes/typed/resource/v1alpha2"
 	schedulingv1 "k8s.io/client-go/kubernetes/typed/scheduling/v1"
 	schedulingv1alpha1 "k8s.io/client-go/kubernetes/typed/scheduling/v1alpha1"
 	schedulingv1beta1 "k8s.io/client-go/kubernetes/typed/scheduling/v1beta1"
@@ -163,6 +164,10 @@ func (*MinCoreClient) CertificatesV1beta1() certificatesv1beta1.CertificatesV1be
 	panic("Not implemented")
 	return nil
 }
+func (*MinCoreClient) CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface {
+	panic("Not implemented")
+	return nil
+}
 func (*MinCoreClient) CoordinationV1beta1() coordinationv1beta1.CoordinationV1beta1Interface {
 	panic("Not implemented")
 	return nil
@@ -239,9 +244,12 @@ func (*MinCoreClient) RbacV1alpha1() rbacv1alpha1.RbacV1alpha1Interface {
 	panic("Not implemented")
 	return nil
 }
-func (*MinCoreClient) ResourceV1alpha1() resourcev1alpha1.ResourceV1alpha1Interface {
+
+func (*MinCoreClient) ResourceV1alpha2() resourcev1alpha2.ResourceV1alpha2Interface {
 	panic("Not implemented")
+	return nil
 }
+
 func (*MinCoreClient) SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface {
 	panic("Not implemented")
 	return nil

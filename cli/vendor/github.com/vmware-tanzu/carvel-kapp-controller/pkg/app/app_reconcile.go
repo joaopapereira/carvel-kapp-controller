@@ -21,7 +21,7 @@ func (a *App) Reconcile(force bool) (reconcile.Result, error) {
 
 	var err error
 
-	a.appMetrics.InitMetrics(a.Name(), a.Namespace())
+	a.appMetrics.ReconcileCountMetrics.InitMetrics(a.Kind(), a.Name(), a.Namespace())
 
 	timerOpts := ReconcileTimerOpts{
 		DefaultSyncPeriod: a.opts.DefaultSyncPeriod,
@@ -103,6 +103,13 @@ func (a *App) reconcileDeploy() error {
 }
 
 func (a *App) reconcileFetchTemplateDeploy() exec.CmdRunResult {
+	reconcileStartTime := time.Now()
+	a.appMetrics.IsFirstReconcile = a.appMetrics.ReconcileCountMetrics.GetReconcileAttemptCounterValue(a.Kind(), a.Name(), a.Namespace()) == 1
+	defer func() {
+		a.appMetrics.ReconcileTimeMetrics.RegisterOverallTime(a.Kind(), a.Name(), a.Namespace(), a.appMetrics.IsFirstReconcile,
+			time.Since(reconcileStartTime))
+	}()
+
 	tmpDir := memdir.NewTmpDir("fetch-template-deploy")
 
 	err := tmpDir.Create()
@@ -129,6 +136,9 @@ func (a *App) reconcileFetchTemplateDeploy() exec.CmdRunResult {
 			UpdatedAt: metav1.NewTime(time.Now().UTC()),
 		}
 
+		a.appMetrics.ReconcileTimeMetrics.RegisterFetchTime(a.Kind(), a.Name(), a.Namespace(), a.appMetrics.IsFirstReconcile,
+			a.app.Status.Fetch.UpdatedAt.Sub(a.app.Status.Fetch.StartedAt.Time))
+
 		err := a.updateStatus("marking fetch completed")
 		if err != nil {
 			return exec.NewCmdRunResultWithErr(err)
@@ -139,6 +149,8 @@ func (a *App) reconcileFetchTemplateDeploy() exec.CmdRunResult {
 		}
 	}
 
+	templateStartTime := time.Now()
+
 	tplResult := a.template(assetsPath)
 
 	a.app.Status.Template = &v1alpha1.AppStatusTemplate{
@@ -147,6 +159,9 @@ func (a *App) reconcileFetchTemplateDeploy() exec.CmdRunResult {
 		Error:     tplResult.ErrorStr(),
 		UpdatedAt: metav1.NewTime(time.Now().UTC()),
 	}
+
+	a.appMetrics.ReconcileTimeMetrics.RegisterTemplateTime(a.Kind(), a.Name(), a.Namespace(), a.appMetrics.IsFirstReconcile,
+		a.app.Status.Template.UpdatedAt.Sub(templateStartTime))
 
 	err = a.updateStatus("marking template completed")
 	if err != nil {
@@ -166,18 +181,24 @@ func (a *App) updateLastDeploy(result exec.CmdRunResult) exec.CmdRunResult {
 	result = result.WithFriendlyYAMLStrings()
 
 	a.app.Status.Deploy = &v1alpha1.AppStatusDeploy{
-		Stdout:    result.Stdout,
-		Stderr:    result.Stderr,
-		Finished:  result.Finished,
-		ExitCode:  result.ExitCode,
-		Error:     result.ErrorStr(),
-		StartedAt: a.app.Status.Deploy.StartedAt,
-		UpdatedAt: metav1.NewTime(time.Now().UTC()),
+		Stdout:           result.Stdout,
+		Stderr:           result.Stderr,
+		Finished:         result.Finished,
+		ExitCode:         result.ExitCode,
+		Error:            result.ErrorStr(),
+		StartedAt:        a.app.Status.Deploy.StartedAt,
+		UpdatedAt:        metav1.NewTime(time.Now().UTC()),
+		KappDeployStatus: a.app.Status.Deploy.KappDeployStatus,
 	}
 
 	defer a.updateStatus("marking last deploy")
 
 	if a.metadata == nil {
+		return result
+	}
+
+	// Do not overwrite kapp deploy status during delete
+	if len(a.metadata.LastChange.Namespaces) == 0 {
 		return result
 	}
 
@@ -195,6 +216,9 @@ func (a *App) updateLastDeploy(result exec.CmdRunResult) exec.CmdRunResult {
 			GroupKinds: usedGKs,
 		},
 	}
+
+	a.appMetrics.ReconcileTimeMetrics.RegisterDeployTime(a.Kind(), a.Name(), a.Namespace(), a.appMetrics.IsFirstReconcile,
+		a.Status().Deploy.UpdatedAt.Sub(a.Status().Deploy.StartedAt.Time))
 
 	return result
 }
@@ -247,7 +271,7 @@ func (a *App) setReconciling() {
 		Status: corev1.ConditionTrue,
 	})
 
-	a.appMetrics.RegisterReconcileAttempt(a.app.Name, a.app.Namespace)
+	a.appMetrics.ReconcileCountMetrics.RegisterReconcileAttempt(a.Kind(), a.Name(), a.Namespace())
 	a.app.Status.FriendlyDescription = "Reconciling"
 }
 
@@ -263,7 +287,7 @@ func (a *App) setReconcileCompleted(result exec.CmdRunResult) {
 		a.app.Status.ConsecutiveReconcileFailures++
 		a.app.Status.ConsecutiveReconcileSuccesses = 0
 		a.app.Status.FriendlyDescription = fmt.Sprintf("Reconcile failed: %s", result.ErrorStr())
-		a.appMetrics.RegisterReconcileFailure(a.app.Name, a.app.Namespace)
+		a.appMetrics.ReconcileCountMetrics.RegisterReconcileFailure(a.Kind(), a.Name(), a.Namespace())
 		a.setUsefulErrorMessage(result)
 	} else {
 		a.app.Status.Conditions = append(a.app.Status.Conditions, v1alpha1.Condition{
@@ -274,7 +298,7 @@ func (a *App) setReconcileCompleted(result exec.CmdRunResult) {
 		a.app.Status.ConsecutiveReconcileSuccesses++
 		a.app.Status.ConsecutiveReconcileFailures = 0
 		a.app.Status.FriendlyDescription = "Reconcile succeeded"
-		a.appMetrics.RegisterReconcileSuccess(a.app.Name, a.app.Namespace)
+		a.appMetrics.ReconcileCountMetrics.RegisterReconcileSuccess(a.Kind(), a.Name(), a.Namespace())
 		a.app.Status.UsefulErrorMessage = ""
 	}
 }
@@ -287,7 +311,7 @@ func (a *App) setDeleting() {
 		Status: corev1.ConditionTrue,
 	})
 
-	a.appMetrics.RegisterReconcileDeleteAttempt(a.app.Name, a.app.Namespace)
+	a.appMetrics.ReconcileCountMetrics.RegisterReconcileDeleteAttempt(a.Kind(), a.Name(), a.Namespace())
 	a.app.Status.FriendlyDescription = "Deleting"
 }
 
@@ -303,10 +327,10 @@ func (a *App) setDeleteCompleted(result exec.CmdRunResult) {
 		a.app.Status.ConsecutiveReconcileFailures++
 		a.app.Status.ConsecutiveReconcileSuccesses = 0
 		a.app.Status.FriendlyDescription = fmt.Sprintf("Delete failed: %s", result.ErrorStr())
-		a.appMetrics.RegisterReconcileDeleteFailed(a.app.Name, a.app.Namespace)
+		a.appMetrics.ReconcileCountMetrics.RegisterReconcileDeleteFailed(a.Kind(), a.Name(), a.Namespace())
 		a.setUsefulErrorMessage(result)
 	} else {
-		a.appMetrics.DeleteMetrics(a.app.Name, a.app.Namespace)
+		a.appMetrics.ReconcileCountMetrics.DeleteMetrics(a.Kind(), a.Name(), a.Namespace())
 	}
 }
 

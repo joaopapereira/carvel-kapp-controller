@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/apis/kappctrl/v1alpha1"
+	datapkgingv1alpha1 "github.com/vmware-tanzu/carvel-kapp-controller/pkg/apiserver/apis/datapackaging/v1alpha1"
 	versions "github.com/vmware-tanzu/carvel-vendir/pkg/vendir/versions/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -75,6 +76,13 @@ type PackageInstallSpec struct {
 	// associated resources.
 	// +optional
 	NoopDelete bool `json:"noopDelete,omitempty"`
+	// Specifies the default namespace to install the Package resources, by default this is
+	// same as the PackageInstall namespace (optional; v0.48.0+)
+	// +optional
+	DefaultNamespace string `json:"defaultNamespace,omitempty"`
+	// Dependencies that needs overrides or secretRef for values
+	// +optional
+	Dependencies Dependencies `json:"dependencies,omitempty"`
 }
 
 type PackageRef struct {
@@ -106,4 +114,17 @@ type PackageInstallStatus struct {
 	// It does _not_ indicate it was successfully installed.
 	// +optional
 	LastAttemptedVersion string `json:"lastAttemptedVersion,omitempty"`
+}
+
+// Dependencies represents the dependency configuration for a package install
+type Dependencies struct {
+	// Install specifies whether the dependencies needs to be installed
+	// When install is set to false it will only validate the presence of the dependencies,
+	// when set to true it will try to install the Packages
+	// +kubebuilder:default=true
+	// +optional
+	Install bool `json:"install,omitempty"`
+	// Overides the dependency package versions based on the values provided
+	// +optional
+	Override []*datapkgingv1alpha1.Dependency `json:"override,omitempty"`
 }

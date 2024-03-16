@@ -184,6 +184,18 @@ func (o *GetOptions) show(client pkgclient.Interface, pkgName, pkgVersion string
 			uitable.NewValueString(wordwrap.WrapString(pkg.Spec.ReleaseNotes, 80)),
 			uitable.NewValueStrings(pkg.Spec.Licenses),
 		}...)
+
+		if len(pkg.Spec.Dependencies) > 0 {
+			headers = append(headers, uitable.NewHeader("Dependencies"))
+			var valueStrings []string
+			for _, dep := range pkg.Spec.Dependencies {
+				valueString := "- Name: " + dep.Name + "\n" +
+					"  Package: " + dep.Package.RefName + "/" + dep.Package.VersionSelection.Constraints
+				valueStrings = append(valueStrings, valueString)
+			}
+			row = append(row, uitable.NewValueStrings(valueStrings))
+		}
+
 	} else {
 		if len(o.DefaultValuesFile) > 0 {
 			return fmt.Errorf("Package version is required when --default-values-file-output flag is declared (hint: to specify a particular version use the format: '<package-name>/<version>')")

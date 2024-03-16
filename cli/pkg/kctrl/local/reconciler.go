@@ -210,8 +210,9 @@ func (o *Reconciler) newReconcilers(
 
 	kcConfig := &kcconfig.Config{}
 
-	appMetrics := metrics.NewAppMetrics()
-	appMetrics.RegisterAllMetrics()
+	appMetrics := metrics.NewMetrics()
+	appMetrics.ReconcileTimeMetrics.RegisterAllMetrics()
+	appMetrics.ReconcileCountMetrics.RegisterAllMetrics()
 
 	refTracker := reftracker.NewAppRefTracker()
 	updateStatusTracker := reftracker.NewAppUpdateStatus()
@@ -242,6 +243,8 @@ func (o *Reconciler) newReconcilers(
 		(*packageinstall.PackageInstallVersionHandler)(nil),
 		runLog.WithName("pkgi"),
 		compInfo,
+		kcConfig,
+		appMetrics,
 	)
 
 	return appReconciler, pkgiReconciler

@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/reftracker"
 	"github.com/vmware-tanzu/carvel-kapp-controller/pkg/template"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -56,7 +57,7 @@ type App struct {
 
 	log        logr.Logger
 	opts       Opts
-	appMetrics *metrics.AppMetrics
+	appMetrics *metrics.Metrics
 
 	pendingStatusUpdate   bool
 	flushAllStatusUpdates bool
@@ -65,7 +66,7 @@ type App struct {
 
 func NewApp(app v1alpha1.App, hooks Hooks,
 	fetchFactory fetch.Factory, templateFactory template.Factory,
-	deployFactory deploy.Factory, log logr.Logger, opts Opts, appMetrics *metrics.AppMetrics, compInfo ComponentInfo) *App {
+	deployFactory deploy.Factory, log logr.Logger, opts Opts, appMetrics *metrics.Metrics, compInfo ComponentInfo) *App {
 
 	return &App{app: app, appPrev: *(app.DeepCopy()), hooks: hooks,
 		fetchFactory: fetchFactory, templateFactory: templateFactory,
@@ -74,6 +75,9 @@ func NewApp(app v1alpha1.App, hooks Hooks,
 
 func (a *App) Name() string      { return a.app.Name }
 func (a *App) Namespace() string { return a.app.Namespace }
+
+// Kind return kind of App
+func (a *App) Kind() string { return "App" }
 
 func (a *App) Status() v1alpha1.AppStatus { return a.app.Status }
 
@@ -276,6 +280,38 @@ func (a *App) ConfigMapRefs() map[reftracker.RefKey]struct{} {
 	return configMaps
 }
 
+func (a *App) noopDeleteDueToTerminatingNamespaces() bool {
+	if a.app.Status.Deploy == nil || a.app.Status.Deploy.KappDeployStatus == nil || a.app.Spec.ServiceAccountName == "" {
+		return false
+	}
+	if !a.isNamespaceTerminatingOrTerminated(a.app.Namespace) {
+		return false
+	}
+	// Ensure that no cluster scoped resources are created by the app
+	// and all affected namespaces are terminating
+	for _, ns := range a.app.Status.Deploy.KappDeployStatus.AssociatedResources.Namespaces {
+		if ns == "(cluster)" {
+			return false
+		}
+		if !a.isNamespaceTerminatingOrTerminated(ns) {
+			return false
+		}
+	}
+	a.log.Info("Safely performing noop delete to avoid blocking namespace deletion")
+	return true
+}
+
+func (a *App) isNamespaceTerminatingOrTerminated(namespace string) bool {
+	status, err := a.compInfo.NamespaceStatus(namespace)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return true
+		}
+		a.log.Error(err, "Error getting app namespace status", "app", a.app.Name, "namespace", a.app.Namespace)
+	}
+	return status.Phase == v1.NamespaceTerminating
+}
+
 // HasImageOrImgpkgBundle is used to determine if the
 // App's spec contains a fetch stage for an image or
 // imgpkgbundle. It is mainly used to determine whether
@@ -291,12 +327,4 @@ func (a App) HasImageOrImgpkgBundle() bool {
 		}
 	}
 	return false
-}
-
-func (a App) isNamespaceTerminating() bool {
-	status, err := a.compInfo.NamespaceStatus(a.app.Namespace)
-	if err != nil {
-		a.log.Error(err, "Error getting app namespace status", "app", a.app.Name, "namespace", a.app.Namespace)
-	}
-	return status.Phase == v1.NamespaceTerminating
 }
