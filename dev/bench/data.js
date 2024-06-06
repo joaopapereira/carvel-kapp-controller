@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1666821044762,
-  "repoUrl": "https://github.com/vmware-tanzu/carvel-kapp-controller",
+  "lastUpdate": 1717687557711,
+  "repoUrl": "https://github.com/joaopapereira/kapp-controller",
   "entries": {
     "Benchmark": [
       {
@@ -7510,6 +7510,102 @@ window.BENCHMARK_DATA = {
             "value": 6580555074,
             "unit": "ns/op\t         4.338 DeleteSeconds\t         2.179 DeploySeconds",
             "extra": "1 times\n2 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "97ff7f943cfd5223a916b131ae62064170372cd2",
+          "message": "Bump golangci/golangci-lint-action from 3.7.0 to 6.0.1 (#1562)\n\nBumps [golangci/golangci-lint-action](https://github.com/golangci/golangci-lint-action) from 3.7.0 to 6.0.1.\r\n- [Release notes](https://github.com/golangci/golangci-lint-action/releases)\r\n- [Commits](https://github.com/golangci/golangci-lint-action/compare/v3.7.0...v6.0.1)\r\n\r\n---\r\nupdated-dependencies:\r\n- dependency-name: golangci/golangci-lint-action\r\n  dependency-type: direct:production\r\n  update-type: version-update:semver-major\r\n...\r\n\r\nSigned-off-by: dependabot[bot] <support@github.com>\r\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2024-06-06T14:15:02+05:30",
+          "tree_id": "ba56a5705bd48458b31fd78f4de07d1537c91ffc",
+          "url": "https://github.com/joaopapereira/kapp-controller/commit/97ff7f943cfd5223a916b131ae62064170372cd2"
+        },
+        "date": 1717687556628,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "Benchmark_pkgr_with_500_packages",
+            "value": 35016601503,
+            "unit": "ns/op\t        17.63 DeleteSeconds\t        17.37 DeploySeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_500_packages - ns/op",
+            "value": 35016601503,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_500_packages - DeleteSeconds",
+            "value": 17.63,
+            "unit": "DeleteSeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_500_packages - DeploySeconds",
+            "value": 17.37,
+            "unit": "DeploySeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_100_packages",
+            "value": 8254538117,
+            "unit": "ns/op\t         4.147 DeleteSeconds\t         4.084 DeploySeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_100_packages - ns/op",
+            "value": 8254538117,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_100_packages - DeleteSeconds",
+            "value": 4.147,
+            "unit": "DeleteSeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_100_packages - DeploySeconds",
+            "value": 4.084,
+            "unit": "DeploySeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_50_packages",
+            "value": 6225227377,
+            "unit": "ns/op\t         4.130 DeleteSeconds\t         2.073 DeploySeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_50_packages - ns/op",
+            "value": 6225227377,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_50_packages - DeleteSeconds",
+            "value": 4.13,
+            "unit": "DeleteSeconds",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "Benchmark_pkgr_with_50_packages - DeploySeconds",
+            "value": 2.073,
+            "unit": "DeploySeconds",
+            "extra": "1 times\n4 procs"
           }
         ]
       }
